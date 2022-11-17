@@ -17,10 +17,8 @@ jobs:
     steps:
     - uses: shaunco/ssh-agent@git-repo-mapping 
       with:
-        ssh-private-key: |
-          ${{ secrets.EXPECT_SSH_PRIVATE_KEY }}
-        repo-mappings: |
-          git@github.com:Dimension-North-Inc/Expect.git
+        ssh-private-key: ${{ secrets.EXPECT_SSH_PRIVATE_KEY }}
+        repo-mappings: https://github.com/Dimension-North-Inc/Expect.git
     - uses: actions/checkout@v2
       with:
         submodules: recursive
