@@ -15,7 +15,15 @@ jobs:
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: shaunco/ssh-agent@git-repo-mapping 
+      with:
+        ssh-private-key: |
+          ${{ secrets.EXPECT_SSH_PRIVATE_KEY }}
+        repo-mappings: |
+          git@github.com:Dimension-North-Inc/Expect.git
+    - uses: actions/checkout@v2
+      with:
+        submodules: recursive
     - name: Build
       run: swift build -v
     - name: Run tests
