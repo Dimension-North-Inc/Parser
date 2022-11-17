@@ -1,5 +1,4 @@
 # Parser
-[![pipeline status](http://monyschuk-ubuntu.local/packages/parser/badges/master/pipeline.svg)](http://monyschuk-ubuntu.local/packages/parser/commits/master)
 
 Parser is a functional parser-combinator library written in Swift. 
 
