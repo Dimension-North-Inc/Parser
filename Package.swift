@@ -14,7 +14,7 @@ let package = Package(
     dependencies: [
         // Dependencies declare other packages that this package depends on.
         // .package(url: /* package url */, from: "1.0.0"),
-        .package(url: "https://gitlab.ndimensionl.com/packages/expect.git", from: "1.2.0")
+        .package(url: "git@github.com:Dimension-North-Inc/Expect.git", from: "1.0.0")
 
     ],
     targets: [
