@@ -1,5 +1,5 @@
 //
-//  Parse.swift
+//  Combinators.swift
 //  Parser
 //
 //  Created by Mark Onyschuk on 2017-03-10.
@@ -147,15 +147,15 @@ public enum Parse {
         return prefix(while: { $0.isWholeNumber })
     }
     
-    /// Returns  a parser which produces a prefix containing only characters in`matching`
-    /// - Parameter matching: ranges of characters to match
-    public static func characters(in matching: ClosedRange<Character>...) -> Parser<String, String> {
+    /// Returns a parser which produces a prefix containing any characters _not_ in `excluding`
+    /// - Parameter excluding: A list of characters or character ranges to exclude.
+    public static func characters(excluding: any CharacterContainer...) -> Parser<String, String> {
         return Parser {
-            func anyMatch(_ character: Character) -> Bool {
-                return matching.contains(where: { $0.contains(character) })
+            func isExcluded(_ character: Character) -> Bool {
+                return excluding.contains { $0.contains(character) }
             }
             
-            if let output = $0.take(while: anyMatch), output.value.count > 0 {
+            if let output = $0.take(while: { !isExcluded($0) }), output.value.count > 0 {
                 return output
             } else {
                 throw ParseError.unmatched
@@ -301,6 +301,20 @@ public enum Parse {
         }.between(whitespace().optional())
     }
         
+    /// Returns a parser that produces a token, which is a sequence of characters
+    /// surrounded by a delimiter.
+    ///
+    /// - Parameter delimiter: A `Parser` that matches the delimiter. Defaults to `Parse.whitespace()`.
+    /// - Returns: A parser that produces the matched token string.
+    public static func token(delimitedBy delimiter: Parser<String, String> = Parse.whitespace()) -> Parser<String, String> {
+        // The content is defined as everything UNTIL the delimiter parser would succeed again.
+        let contentParser = Parse.prefix(until: delimiter)
+        
+        // A token is then defined as this construct, surrounded by optional whitespace.
+        return contentParser.between(whitespace().optional())
+    }
+  
+    
     /// Returns a parser which produces the literal string`name`, without optional whitespace prefix and suffix, on match.
     /// - Parameters:
     ///   - name: a literal string to match
@@ -423,6 +437,15 @@ public enum Parse {
             }
         }
     }
+
+    /// Returns a parser which parses zero or one `parser`.
+    /// This is a static combinator version of the `.optional()` instance method, allowing for a more functional composition style.
+    /// - Parameters:
+    ///   - parser: an item parser
+    public static func optional<I, O>(_ parser: Parser<I, O>) -> Parser<I, O?> {
+        return zeroOrOne(parser)
+    }
+
 
     /// Returns a parser which parses one or more `parser`
     /// - Parameters:
@@ -667,6 +690,49 @@ public enum Parse {
     }
 }
 
+public protocol CharacterContainer {
+    func contains(_ character: Character) -> Bool
+}
+
+extension String: CharacterContainer {
+    // Conformance is automatic as String already implements contains(_:)
+}
+
+extension Character: CharacterContainer {
+    public func contains(_ character: Character) -> Bool {
+        return self == character
+    }
+}
+
+extension ClosedRange: CharacterContainer where Bound == Character {
+    // Conformance is automatic as ClosedRange already implements contains(_:)
+}
+
+extension CharacterSet: CharacterContainer {
+    public func contains(_ character: Character) -> Bool {
+        // A character is in the set if all its unicode scalars are in the set.
+        return character.unicodeScalars.allSatisfy(self.contains)
+    }
+}
+
+extension Parse {
+    /// Returns  a parser which produces a prefix containing only characters in`matching`
+    /// - Parameter matching: ranges of characters to match
+    public static func characters(in matching: any CharacterContainer...) -> Parser<String, String> {
+        return Parser {
+            func anyMatch(_ character: Character) -> Bool {
+                return matching.contains { $0.contains(character) }
+            }
+            
+            if let output = $0.take(while: anyMatch), output.value.count > 0 {
+                return output
+            } else {
+                throw ParseError.unmatched
+            }
+        }
+    }
+}
+
 extension Parser {
     
     /// Shorthand for `Parse.zeroOrOne(self)`
@@ -706,4 +772,31 @@ extension Parser {
     public func between<P, Q>(_ prefix: Parser<Input, P>, _ suffix: Parser<Input, Q>) -> Parser<Input, Output> {
         return Parse.first(of: Parse.second(of: prefix, and: self), and: suffix)
     }
+    
+    /// Returns a new parser that first runs the receiver, and if successful,
+    /// applies a validation check to its output. If the `isValid` closure
+    /// returns `true`, the parser succeeds with the original output. If the
+    /// closure returns `false`, the parser fails with a `ParseError.unmatched`.
+    ///
+    /// This is useful for enforcing semantic rules on a structurally valid parse.
+    ///
+    /// - Parameter isValid: A closure that takes the parser's output and returns `true` if it is valid.
+    /// - Returns: A new parser that incorporates the validation logic.
+    public func validate(_ isValid: @escaping (Output) -> Bool) -> Parser<Input, Output> {
+        return Parser { input in
+            // First, run the original parser. If this throws, the error propagates naturally.
+            let originalOutput = try self.body(input)
+            
+            // If the original parser succeeded, apply the validation check to its value.
+            if isValid(originalOutput.value) {
+                // The value is valid, so return the original success output.
+                return originalOutput
+            } else {
+                // The value is invalid, so force a failure.
+                throw ParseError.unmatched
+            }
+        }
+    }
 }
+
+
