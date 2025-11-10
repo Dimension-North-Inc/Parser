@@ -199,8 +199,13 @@ class CombinatorTests: XCTestCase {
         let oneOrMoreA = Parse.oneOrMore(a, separatedBy: sep)
         let zeroOrMoreA = Parse.zeroOrMore(a, separatedBy: sep)
 
-        expect { try oneOrMoreA.parse("A, A, B, B") } == ["A", "A"]
-        expect { try zeroOrMoreA.parse("A, A, B, B") } == ["A", "A"]
+        expect { try oneOrMoreA.parse("A") } == ["A"]
+        expect { try oneOrMoreA.parse("A, A") } == ["A", "A"]
+        
+        expect { try zeroOrMoreA.parse("") } ==  []
+        expect { try zeroOrMoreA.parse("A") } ==  ["A"]
+        expect { try zeroOrMoreA.parse("A, A") } == ["A", "A"]
+
         expect { try oneOrMoreA.parse("B, A, A, B, B") } .to(throwAny())
         expect { try zeroOrMoreA.parse("B, A, A, B, B") } == []
     }

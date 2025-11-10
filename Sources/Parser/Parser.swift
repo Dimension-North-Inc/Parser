@@ -8,14 +8,65 @@
 
 import Foundation
 
-/// A parser which consumes `Input` and produces `Output`
+/// A simple box type to allow for recursive value types like ParseError.
+public final class Box<T> {
+    public let value: T
+    public init(_ value: T) {
+        self.value = value
+    }
+}
 
+/// A rich, structured error type that provides detailed information about a parsing failure.
+public struct ParseError<Input: Parsable>: Error {
+    /// The exact position in the input stream where the error occurred.
+    public let position: ParserInput<Input>
+    
+    /// A stack of context labels, showing the chain of parsers that were active when the failure occurred.
+    public let contextStack: [String]
+    
+    /// The underlying, more specific cause of this error, if any.
+    public let cause: Box<ParseError<Input>>?
+
+    public init(position: ParserInput<Input>, contextStack: [String] = [], cause: ParseError<Input>? = nil) {
+        self.position = position
+        self.contextStack = contextStack
+        self.cause = cause.map { Box($0) }
+    }
+}
+
+extension ParseError: CustomStringConvertible where Input.SubSequence: CustomStringConvertible {
+    public var description: String {
+        var lines: [String] = []
+        var currentError: ParseError<Input>? = self
+        var indentation = ""
+
+        while let error = currentError {
+            if !error.contextStack.isEmpty {
+                lines.append("\(indentation)- Expected: \(error.contextStack.joined(separator: " -> "))")
+            }
+            
+            // Only show position for the deepest, most specific error.
+            if error.cause == nil {
+                lines.append("\(indentation)  at position:")
+                lines.append("\(indentation)  > \(error.position.description)")
+            }
+            
+            indentation += "  "
+            currentError = error.cause?.value
+        }
+        
+        return "Parse failed:\n" + lines.joined(separator: "\n")
+    }
+}
+
+
+/// A parser which consumes `Input` and produces `Output`
 public struct Parser<Input, Output> where Input: Parsable {
     /// `Element`s of `Input`
     
     public typealias Element = Input.Element
     
-    let body: (ParserInput<Input>)throws -> ParserOutput<Output, ParserInput<Input>>
+    public let body: (ParserInput<Input>)throws -> ParserOutput<Output, ParserInput<Input>>
     
     /// Initializes a new parser with a `body` that takes `ParserInput` and produces `ParserOutput`, or throws.
     /// - Parameter body: a function that consumes a `ParserInput` and produces a `ParserOutput` or throws
@@ -50,37 +101,45 @@ public struct Parser<Input, Output> where Input: Parsable {
     }
 }
 
-public struct ParserError<Input, Underlying>: Error where Input: Parsable, Underlying: Error {
-    public let error: Underlying
-    public let input: ParserInput<Input>
-}
-
-public enum ParseError: Error {
-    case overflow
-    case unmatched
-}
-
-extension ParserError: Equatable where Input: Equatable, Underlying: Equatable {
-}
-
-
-
 extension Parser {
-
-    /// Returns a new parser which throws the custom error `error` on failure
-    /// - Parameter error: an `Error` to throw
-    /// - Returns: a new parser
-    
-    public func throwing<E>(error err: E) -> Parser<Input, Output> where E: Error {
-        return Parser<Input, Output> {
+    /// Returns a new parser that attaches a context label to any errors thrown by the receiver.
+    /// When an error is thrown, it is wrapped in a new `ParseError` that includes the given label.
+    /// This is the primary mechanism for building a descriptive, hierarchical error report.
+    ///
+    // - Parameter name: The context label to attach to this parser.
+    /// - Returns: A new parser with labeling behavior.
+    public func label(_ name: String) -> Parser<Input, Output> {
+        return Parser { input in
             do {
-                return try body($0)
+                return try self.body(input)
+            } catch let error as ParseError<Input> {
+                // This is an error we already know how to handle. Wrap it.
+                throw ParseError(
+                    position: error.position,
+                    contextStack: [name],
+                    cause: error
+                )
+            } catch {
+                // This is a generic, non-parse error. Create a new root ParseError.
+                throw ParseError(
+                    position: input,
+                    contextStack: [name]
+                )
             }
-            catch let error as ParserError<Input, E> {
-                throw error
-            }
-            catch {
-                throw ParserError<Input, E>(error: err, input: $0)
+        }
+    }
+
+    /// Returns a new parser that behaves like the receiver, but any error it throws
+    /// is converted into a simple, non-hierarchical error at the starting position.
+    /// This is crucial for controlling backtracking in `either` or list combinators,
+    /// preventing a partial match from generating a deep error that kills the entire parse.
+    public func atomic() -> Parser<Input, Output> {
+        return Parser { input in
+            do {
+                return try self.body(input)
+            } catch {
+                // Discard the detailed error and throw a simple one at the start.
+                throw ParseError(position: input)
             }
         }
     }
@@ -111,15 +170,13 @@ public struct ParserInput<Input> where Input: Parsable {
     }
 
     public func first(_ value: Input.Element) -> ParserOutput<Input.Element, Self>? {
-        return input[position] == value
-            ? ParserOutput(value: input[position], remainder: self.advanced(by: 1))
-            : nil
+        guard position < input.endIndex, input[position] == value else { return nil }
+        return ParserOutput(value: input[position], remainder: self.advanced(by: 1))
     }
     
     public func first(_ matching: (Input.Element) -> Bool) -> ParserOutput<Input.Element, Self>? {
-        return matching(input[position])
-            ? ParserOutput(value: input[position], remainder: self.advanced(by: 1))
-            : nil
+        guard position < input.endIndex, matching(input[position]) else { return nil }
+        return ParserOutput(value: input[position], remainder: self.advanced(by: 1))
     }
     
     public func take(_ prefix: Input) -> ParserOutput<Input, Self>? {
