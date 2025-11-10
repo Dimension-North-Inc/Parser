@@ -22,7 +22,8 @@ Add Parser as a dependency to your `Package.swift` file:
 ```swift
 dependencies: [
     .package(url: "https/your/github/repo/url.git", from: "1.0.0")
-]```
+]
+```
 
 ## Core Concept
 
@@ -108,11 +109,11 @@ try integerList.parse("1, 2, 3") // [1, 2, 3]
 
 A key feature of Parser is its ability to generate helpful, human-readable errors.
 
-### `.label()` for Context
+#### `.label()` for Context
 
 Wrap a parser in `.label()` to add a descriptive name to the error stack if that section fails. This helps create a clear, hierarchical trace.
 
-### `.validate()` for Semantic Rules
+#### `.validate()` for Semantic Rules
 
 Sometimes input is structurally correct but semantically invalid. `.validate()` checks the *value* of a successful parse and allows you to fail with a dynamic, custom error message.
 
@@ -125,7 +126,7 @@ let portNumber = Parse.int().validate { port in
 }
 ```
 
-### `.fail()` for Forbidden Patterns
+#### `.fail()` for Forbidden Patterns
 
 Use `.fail()` to explicitly mark a successfully parsed pattern as an error. This is perfect for reserved keywords or unsupported syntax.
 
