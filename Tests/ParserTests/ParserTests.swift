@@ -13,11 +13,11 @@ import XCTest
 class ParserTests: XCTestCase {
 
     func testItCanBeInitializedWithABodyFunction() {
-        let body: (ParserInput<String>)throws->ParserOutput<String, ParserInput<String>> = {
+        let body: (ParserInput<String>) throws -> ParserOutput<String, ParserInput<String>> = {
              if let output = $0.take(while: { $0.isWhitespace }) {
                  return output
              } else {
-                 throw ParseError.unmatched
+                 throw ParseError(position: $0)
              }
          }
          let _ = Parser(body: body)
@@ -27,7 +27,7 @@ class ParserTests: XCTestCase {
         if let output = $0.take(while: { $0.isWhitespace }) {
             return output
         } else {
-            throw ParseError.unmatched
+            throw ParseError(position: $0)
         }
     }
     
@@ -44,75 +44,61 @@ class ParserTests: XCTestCase {
         expect { try whitespaceCounter.parse("   A") } == 3
     }
     
-    func testItCanThrowCustomErrors() {
-        let a = Parse.token("a")
-        
-        let twoAs = a <*> a
+    func testItProducesHierarchicalErrorsOnFailure() {
+        // A number is a sequence of digits.
+        let number = Parse.numbers().label("number")
 
-        // generic errors
-        expect { try twoAs.parse("aa") } .notTo(throwAny())
-        expect { try twoAs.parse("ab") } .to(throwError(ParseError.unmatched))
+        // An argument list is a list of numbers separated by commas.
+        let argList = Parse.list(of: number, separatedBy: Parse.literal(","))
+            .label("argument list")
+
+        // The full expression is an argument list between parentheses.
+        let expression = argList
+            .between(Parse.literal("("), Parse.literal(")"))
+            .label("parenthesized expression")
         
-        // custom error
-        enum Err: Error {
-            case custom
-        }
-        
-        let customA = a.throwing(error: Err.custom)
-        let customTwoAs = customA <*> customA
-        
+        // Test a failure deep inside the parser structure
+        let input = "(1,2,foo,4)"
         do {
-            _ = try customTwoAs.parse("ab")
-        }
-        catch let err as ParserError<String, Err> {
-            expect { err.error } == .custom
-            expect { err.input.description } == "a^b"
-        }
-        catch {
-            XCTFail()
-        }
-    }
-    
-    func testItBubblesUpMeaningfulErrorsToTheTopLevel() {
-        enum Err: Error, Equatable {
-            case missingNumber
-            case missingSeparator
-            case unclosedParens
-        }
-        
-        let arg  = Parse.numbers().throwing(error: Err.missingNumber)
-        let sep  = Parse.token(",").throwing(error: Err.missingSeparator)
-        
-        let obrak = Parse.token("(")
-        let cbrak = Parse.token(")").throwing(error: Err.unclosedParens)
-        
-        let fname = Parse.letters()
-        let fargs = Parse.list(of: arg, separatedBy: sep).between(obrak, cbrak)
-        
-        let expr  = fname<*>fargs
-        
-        expect { try expr.parse("f(1, 2, 3)") } .notTo(throwAny())
+            _ = try expression.parse(input)
+            XCTFail("Parser should have thrown an error but did not.")
+        } catch let error as ParseError<String> {
+            // The top-level error should be our highest label
+            expect { error.contextStack.first } == "parenthesized expression"
+            
+            // Traverse the cause chain to find the specific failure
+            let cause1 = error.cause?.value
+            expect { cause1?.contextStack.first } == "argument list"
+            
+            let cause2 = cause1?.cause?.value
+            expect { cause2?.contextStack.first } == "number"
 
+            // The position should be at the deepest point of failure
+            expect { error.position.description } == "(1,2,^foo,4)"
+
+        } catch {
+            XCTFail("Caught an unexpected error type: \(error)")
+        }
+        
+        // Test a failure at a higher level (e.g., missing closing parenthesis)
+        let input2 = "(1,2,3"
         do {
-            _ = try expr.parse("f(1, 2")
+            _ = try expression.parse(input2)
+            XCTFail("Parser should have thrown an error but did not.")
+        } catch let error as ParseError<String> {
+            // The top-level error is from our highest label
+            expect { error.contextStack.first } == "parenthesized expression"
+            
+            // The cause is the specific failure from the literal parser
+            let cause = error.cause?.value
+            expect { cause?.contextStack.first } == "')'"
+            
+            // The position of the error is at the end of the input
+            expect { error.position.description } == "(1,2,3^"
+            
+        } catch {
+            XCTFail("Caught an unexpected error type: \(error)")
         }
-        catch let error as ParserError<String, Err> {
-            expect { error.error } == .unclosedParens
-        }
-        catch {
-            XCTFail()
-        }
-
-        do {
-            _ = try expr.parse("f(1,")
-        }
-        catch let error as ParserError<String, Err> {
-            expect { error.error } == .unclosedParens
-        }
-        catch {
-            XCTFail()
-        }
-
     }
 }
 
