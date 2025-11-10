@@ -23,8 +23,7 @@ precedencegroup ParserHighPrecedence {
 }
 
 infix operator  |> : ParserLowPrecedence    // Parser.map
-
-infix operator  ?> : ParserLowPrecedence    // Parse.failure
+infix operator >>= : ParserLowPrecedence    // Parser.flatMap
 
 infix operator <*  : ParserHighPrecedence    // Parse.first
 infix operator  *> : ParserHighPrecedence    // Parse.second
@@ -49,15 +48,11 @@ public func |><I, O, P>(lhs: Parser<I, O>, rhs: P) -> Parser<I, P> {
     return lhs.producing(rhs)
 }
 
-/// Returns a new parser which produces the product of `lhs`, or throws.
+/// Returns a new parser which chains the output of `lhs` into a new parser produced by `rhs`.
 ///
-/// - parameter rhs: a function returning an error to be thrown
-
-public func ?><I, O>(lhs: Parser<I, O>, rhs: @escaping (ParserInput<I>) -> Error) -> Parser<I, O> {
-    return Parser { input in
-        do    { return try lhs.body(input) }
-        catch { throw rhs(input) }
-    }
+/// Equivalent to `lhs.flatMap(rhs)`
+public func >>=<I, O, P>(lhs: Parser<I, O>, rhs: @escaping (O) -> Parser<I, P>) -> Parser<I, P> {
+    return lhs.flatMap(rhs)
 }
 
 /// Returns a new parser which produces the product of `lhs` if
@@ -94,12 +89,4 @@ public func<*><I, O, P>(lhs: Parser<I, O>, rhs: Parser<I, P>) -> Parser<I, (O, P
 
 public func <|><I, O>(lhs: Parser<I, O>, rhs: Parser<I, O>) -> Parser<I, O> {
     return Parse.either(lhs, or: rhs)
-}
-
-/// Returns a parser which either parses `lhs` or throws `rhs`
-///
-/// Equivalent to `Parser.either(lhs, or: Parse.error(rhs))`
-
-public func ?><I, O, E>(lhs: Parser<I, O>, rhs: E) -> Parser<I, O> where E: Error {
-    return lhs <|> Parse.error(rhs)
 }

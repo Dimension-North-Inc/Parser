@@ -22,14 +22,15 @@ public enum Parse {
             return ParserOutput(value: (), remainder: $0)
         }
     }
-
-    /// Returns a parser which never matches and always throws `throwing`
-    /// - Parameter throwing: an error to throw
-
-    public static func error<I, O, E>(_ throwing: E) -> Parser<I, O> where E: Error {
-        Parser {
-            input in
-            throw throwing
+    
+    /// Returns a parser which never matches and always throws a `ParseError`
+    /// with the given message, capturing the current input position.
+    /// Because its body always throws, it can satisfy any required Output type.
+    ///
+    /// - Parameter message: The context message to include in the ParseError.
+    public static func fail<I, O>(message: String) -> Parser<I, O> {
+        Parser { input in
+            throw ParseError(position: input, contextStack: [message])
         }
     }
 
@@ -754,29 +755,5 @@ extension Parser {
         Input, Output
     > {
         Parse.first(of: Parse.second(of: prefix, and: self), and: suffix)
-    }
-
-    /// Returns a new parser that first runs the receiver, and if successful,
-    /// applies a validation check to its output. If the `isValid` closure
-    /// returns `true`, the parser succeeds with the original output. If the
-    /// closure returns `false`, the parser fails with a `ParseError`.
-    ///
-    /// This is useful for enforcing semantic rules on a structurally valid parse.
-    ///
-    /// - Parameter isValid: A closure that takes the parser's output and returns `true` if it is valid.
-    /// - Returns: A new parser that incorporates the validation logic.
-    public func validate(_ isValid: @escaping (Output) -> Bool) -> Parser<Input, Output> {
-        Parser { input in
-            // First, run the original parser. If this throws, the error propagates naturally.
-            let originalOutput = try self.body(input)
-
-            // If the original parser succeeded, apply the validation check to its value.
-            guard isValid(originalOutput.value) else {
-                // The value is invalid, so force a failure.
-                throw ParseError(position: input)
-            }
-            // The value is valid, so return the original success output.
-            return originalOutput
-        }
     }
 }

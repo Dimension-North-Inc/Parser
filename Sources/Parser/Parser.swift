@@ -92,6 +92,27 @@ public struct Parser<Input, Output> where Input: Parsable {
         return map { _ in value }
     }
     
+    /// Returns a new parser that chains the receiver's output into a new parser.
+    /// This is the fundamental combinator for creating context-sensitive parsers,
+    /// where the result of one parse determines the next parse to be run.
+    ///
+    /// - Parameter transform: A function that takes the output of the receiver
+    ///   and returns a new parser to be run on the remaining input.
+    public func flatMap<U>(_ transform: @escaping (Output) -> Parser<Input, U>) -> Parser<Input, U> {
+        return Parser<Input, U> { input in
+            // 1. Run the original parser (self).
+            let originalOutput = try self.body(input)
+            
+            // 2. If it succeeds, take its value...
+            let value = originalOutput.value
+            
+            // 3. ...and pass it to the transform function to get the *next* parser.
+            let nextParser = transform(value)
+            
+            // 4. Run the next parser on the remaining input.
+            return try nextParser.body(originalOutput.remainder)
+        }
+    }
     
     /// Applies the parser to `input`, producing parsed output, or throwing if the parser fails to match
     /// - Parameter input: input to be parsed
@@ -142,6 +163,61 @@ extension Parser {
                 throw ParseError(position: input)
             }
         }
+    }
+    
+    /// Returns a new parser that first runs the receiver, and if successful,
+    /// applies a semantic validation check to its output.
+    ///
+    /// The `check` closure is given the parsed output and should return `nil`
+    /// on success, or a `String` containing a custom error message on failure.
+    /// This allows for creating rich, context-aware error messages for
+    /// structurally valid but semantically invalid input.
+    ///
+    /// - Parameter check: A closure that takes the parser's output and returns
+    ///   an optional error message.
+    /// - Returns: A new parser that incorporates the validation logic.
+    public func validate(_ check: @escaping (Output) -> String?) -> Parser<Input, Output> {
+        Parser { input in
+            // First, run the original parser. If this throws, it propagates naturally.
+            let originalOutput = try self.body(input)
+
+            // If the original parser succeeded, apply the validation check to its value.
+            if let errorMessage = check(originalOutput.value) {
+                // The value is invalid. Throw a new ParseError at the start
+                // of the consumed token, using the custom error message.
+                throw ParseError(position: input, contextStack: [errorMessage])
+            }
+            
+            // The value is valid, so return the original success output.
+            return originalOutput
+        }
+    }
+    
+    /// Returns a new parser that, upon a successful parse, immediately fails
+    /// with the given static error message. If the receiver fails, its
+    /// original error is propagated.
+    ///
+    /// This is a convenient way to forbid a specific pattern. For example, to
+    /// forbid the keyword "else" you could use `Parse.literal("else").fail("keyword 'else' is not allowed here")`.
+    ///
+    /// - Parameter message: The static error message to use for the failure.
+    /// - Returns: A new parser that turns a success into a failure.
+    public func fail(_ message: String) -> Parser<Input, Output> {
+        return self.validate { _ in message }
+    }
+    
+    /// Returns a new parser that, upon a successful parse, immediately fails
+    /// by generating a dynamic error message from the parsed value. If the
+    /// receiver fails, its original error is propagated.
+    ///
+    /// This is the ideal way to forbid a pattern while providing a rich error
+    /// message that includes the invalid value.
+    ///
+    /// - Parameter message: A closure that takes the successful output and
+    ///   returns the error message string.
+    /// - Returns: A new parser that turns a success into a dynamic failure.
+    public func fail(_ message: @escaping (Output) -> String) -> Parser<Input, Output> {
+        return self.validate(message)
     }
 }
 

@@ -100,6 +100,42 @@ class ParserTests: XCTestCase {
             XCTFail("Caught an unexpected error type: \(error)")
         }
     }
+    
+    func testItCanTurnASuccessIntoAStaticFailure() {
+        // Define a parser that matches a forbidden pattern.
+        let forbiddenParser = Parse.literal("forbidden")
+            .fail("'forbidden' is a reserved keyword")
+        
+        do {
+            _ = try forbiddenParser.parse("forbidden")
+            XCTFail("Parser should have failed but did not.")
+        } catch let error as ParseError<String> {
+            expect { error.contextStack.first } == "'forbidden' is a reserved keyword"
+            expect { error.position.description } == "^forbidden"
+        } catch {
+            XCTFail("Caught an unexpected error type: \(error)")
+        }
+        
+        // The parser should still fail normally on non-matching input
+        expect { try forbiddenParser.parse("allowed") }.to(throwAny())
+    }
+    
+    func testItCanTurnASuccessIntoADynamicFailure() {
+        // Define a parser that captures a word.
+        let wordParser = Parse.letters()
+            .fail { word in "'\(word)' is not a valid command" }
+        
+        do {
+            _ = try wordParser.parse("invalid")
+            XCTFail("Parser should have failed but did not.")
+        } catch let error as ParseError<String> {
+            // Check that the parsed value was used in the error.
+            expect { error.contextStack.first } == "'invalid' is not a valid command"
+            expect { error.position.description } == "^invalid"
+        } catch {
+            XCTFail("Caught an unexpected error type: \(error)")
+        }
+    }
 }
 
 class ParserInputTests: XCTestCase {

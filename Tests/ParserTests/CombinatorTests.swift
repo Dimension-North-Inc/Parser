@@ -20,16 +20,36 @@ class CombinatorTests: XCTestCase {
     func testItCanPurposefullyParseRegardlessOfInput() {
         expect { try Parse.nothing().parse("ABC") } .notTo(throwAny())
     }
-    
-    func testItCanPurposefullyThrowRegardlessOfInput() {
-        enum Err: Error {
-            case example
+
+    func testItCanFailWithADynamicMessage() {
+        // GOAL: Forbid numbers greater than 100 and provide a dynamic error.
+        
+        let numberUnder100 = Parse.int().validate { num in
+            // Return an error message string on failure
+            if num > 100 {
+                return "number \(num) is out of the valid range (0-100)"
+            }
+            // Return nil on success
+            return nil
         }
         
-        let parseErr: Parser<String, String> = Parse.error(Err.example)
-        expect { try parseErr.parse("ABC") } .to(throwError(Err.example))
+        // Test a valid number
+        expect { try numberUnder100.parse("42") } == 42
+        
+        // Test an invalid number
+        do {
+            _ = try numberUnder100.parse("101")
+            XCTFail("Parser should have failed but did not.")
+        } catch let error as ParseError<String> {
+            expect { error.contextStack.first } == "number 101 is out of the valid range (0-100)"
+            
+            // The position should now correctly be at the START of the token.
+            expect { error.position.description } == "^101"
+        } catch {
+            XCTFail("Caught an unexpected error type: \(error)")
+        }
     }
-
+    
     func testItCanParseSimplePrefixes() {
         expect { try Parse.first("C").parse("Cat") } == Character("C")
         expect { try Parse.first("C").parse("Dog") } .to(throwAny())
