@@ -192,7 +192,7 @@ class CombinatorTests: XCTestCase {
         let b = Parse.literal("B")
 
         expect { try Parse.prefix(until: a <|> b).parse("123ABC") } == "123"
-        expect { try Parse.prefix(until: a <|> b).parse("123XYZ") } .to(throwAny())
+        expect { try Parse.prefix(until: a <|> b).parse("123XYZ") } == "123XYZ"
     }
 
     func testItCanParseZeroOrOneInstanceOfAnotherParser() {
@@ -261,5 +261,29 @@ class CombinatorTests: XCTestCase {
         expect { try expr.parse("10 / 2 + 5 * 4") } == 25
         
         expect { try expr.parse("ABAB") } .to(throwAny())
+    }
+    
+    func testItCanParseWhitespaceDelimitedTokens() {
+        // Define the parser using the no-argument version of token()
+        let word = Parse.token()
+
+        // Test 1: Simple case with trailing text
+        expect { try word.parse("hello world") } == "hello"
+
+        // Test 2: Input with leading whitespace
+        expect { try word.parse("  leading") } == "leading"
+        
+        // Test 3: Input with both leading and trailing whitespace
+        expect { try word.parse("  both  ") } == "both"
+
+        // Test 4: Input with multiple whitespace characters between words
+        expect { try word.parse("multiple   spaces") } == "multiple"
+
+        // Test 5: A token containing numbers and symbols
+        expect { try word.parse("token123! next") } == "token123!"
+
+        // Test 6: Fails if the input is empty or only whitespace
+        expect { try word.parse("") }.to(throwAny())
+        expect { try word.parse("   ") }.to(throwAny())
     }
 }

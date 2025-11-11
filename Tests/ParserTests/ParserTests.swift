@@ -103,7 +103,7 @@ class ParserTests: XCTestCase {
     
     func testItCanTurnASuccessIntoAStaticFailure() {
         // Define a parser that matches a forbidden pattern.
-        let forbiddenParser = Parse.literal("forbidden")
+        let forbiddenParser: Parser<String, String> = Parse.literal("forbidden")
             .fail("'forbidden' is a reserved keyword")
         
         do {
@@ -122,7 +122,7 @@ class ParserTests: XCTestCase {
     
     func testItCanTurnASuccessIntoADynamicFailure() {
         // Define a parser that captures a word.
-        let wordParser = Parse.letters()
+        let wordParser: Parser<String, String> = Parse.letters()
             .fail { word in "'\(word)' is not a valid command" }
         
         do {

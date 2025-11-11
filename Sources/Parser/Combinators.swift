@@ -104,7 +104,8 @@ public enum Parse {
         }
     }
 
-    /// Returns a parser which produces the prefix of input up to `matching`, or the balance of input if `matching` is not found.
+    /// Returns a parser which produces the prefix of input up to `matching`,
+    /// or the balance of input if `matching` is not found.
     /// - Parameter matching: an input to match
     public static func prefix<I>(until matching: Parser<I, I>) -> Parser<I, I> {
         Parser {
@@ -114,16 +115,19 @@ public enum Parse {
             while !start.isAtEnd() {
                 // Use a non-throwing body check to avoid catching our rich errors
                 if (try? matching.body(start)) != nil {
+                    // Delimiter was found, return the prefix up to this point.
                     return input.take(upto: start.position)
                 } else {
                     start = start.advanced(by: 1)
                 }
             }
 
-            throw ParseError(position: input)
+            // Delimiter was NOT found. Per the documentation, succeed and
+            // return the balance of the input.
+            return input.take(upto: start.position)
         }
     }
-
+    
     /// Returns a parser which produces string containing whitespace including spaces, tabs, and newlines on match
 
     public static func whitespace() -> Parser<String, String> {
@@ -304,13 +308,14 @@ public enum Parse {
     public static func token(delimitedBy delimiter: Parser<String, String> = Parse.whitespace())
         -> Parser<String, String>
     {
-        // The content is defined as everything UNTIL the delimiter parser would succeed again.
-        let contentParser = Parse.prefix(until: delimiter)
-
-        // A token is then defined as this construct, surrounded by optional whitespace.
+        let contentParser = Parse.prefix(until: delimiter).validate { content in
+            // On success, check the result. If it's empty, return an
+            // error message to turn this success into a failure.
+            // Otherwise, return nil to allow the success to continue.
+            content.isEmpty ? "expected a token but found none" : nil
+        }
         return contentParser.between(Parse.optional(Parse.whitespace()))
     }
-
     /// Returns a parser which produces the literal string`name`, without optional whitespace prefix and suffix, on match.
     /// - Parameters:
     ///   - name: a literal string to match
